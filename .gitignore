@@ -12,6 +12,7 @@ wandb/
 *.log
 *.out
 __pycache__
+cache*
 
 run_*.sh
 !run.sh
