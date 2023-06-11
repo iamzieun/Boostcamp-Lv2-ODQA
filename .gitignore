@@ -19,3 +19,6 @@ run_*.sh
 inference_*.sh
 !inference.sh
 wikipedia_documents.json
+sparse_embedding.bin
+tfidv.bin
+faiss_clusters*

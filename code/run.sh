@@ -11,11 +11,9 @@ python train.py \
 --weight_decay 0.01 \
 --warmup_ratio 0.1 \
 --logging_steps 100 \
---evaluation_strategy "steps" \
 --eval_steps 100 \
---save_strategy "steps" \
+--evaluation_strategy "steps" \
 --fp16 True \
---load_best_model_at_end True \
 --wandb_project_name "mrc_test" \
 --wandb_entity "salmons" \
---wandb_run_name "baseline"
+--wandb_run_name "baseline" \
