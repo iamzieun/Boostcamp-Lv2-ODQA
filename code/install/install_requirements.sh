@@ -15,3 +15,4 @@ pip install huggingface-hub
 
 # faiss install (if you want to)
 pip install faiss-gpu
+pip install rank_bm25
