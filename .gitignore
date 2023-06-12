@@ -8,6 +8,8 @@ wandb/
 .vscode/
 
 wandb/
+eda/
+run script/
 
 *.log
 *.out
