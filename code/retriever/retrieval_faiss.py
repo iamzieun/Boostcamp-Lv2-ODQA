@@ -77,8 +77,8 @@ class RetrievalFaiss:
         """
 
         # Pickle을 저장합니다.
-        pickle_name = f"sparse_embedding.bin"
-        tfidfv_name = f"tfidv.bin"
+        pickle_name = f"faiss_embedding.bin"
+        tfidfv_name = f"faiss.bin"
         emd_path = os.path.join(self.data_path, pickle_name)
         tfidfv_path = os.path.join(self.data_path, tfidfv_name)
 
