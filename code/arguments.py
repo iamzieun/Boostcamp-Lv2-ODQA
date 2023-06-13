@@ -87,8 +87,8 @@ class DataTrainingArguments:
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
     )
-    use_faiss: bool = field(
-        default=False, metadata={"help": "Whether to build with faiss"}
+    retrieval_method: str = field(
+        default="bm25", metadata={"help": "Choose retriever for passage retrieval"}
     )
 
 @dataclass

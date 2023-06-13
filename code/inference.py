@@ -20,7 +20,9 @@ from datasets import (
     load_from_disk
 )
 import evaluate
-from retriever.retrieval_sparse import SparseRetrieval
+from retriever.retrieval_tfidf import RetrievalTfidf
+from retriever.retrieval_faiss import RetrievalFaiss
+from retriever.retrieval_bm25 import RetrievalBM25
 from trainer.trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoConfig,
@@ -67,7 +69,7 @@ def main():
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
 
-    # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
+    # AutoConfig를 이용하여 pretrained model과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     config = AutoConfig.from_pretrained(
         model_args.config_name
@@ -86,7 +88,7 @@ def main():
         config=config,
     )
 
-    # True일 경우 : run passage retrieval
+    # passage retrieval
     if data_args.eval_retrieval:
         datasets = run_sparse_retrieval(
             tokenizer.tokenize, datasets, training_args, data_args,
@@ -107,17 +109,25 @@ def run_sparse_retrieval(
 ) -> DatasetDict:
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
-    retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
-    )
-    retriever.get_sparse_embedding()
-
-    if data_args.use_faiss:
-        retriever.build_faiss(num_clusters=data_args.num_clusters)
-        df = retriever.retrieve_faiss(
-            datasets["validation"], topk=data_args.top_k_retrieval
+    if data_args.retrieval_method == "tfidf":
+        retriever = RetrievalTfidf(
+            tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
-    else:
+        retriever.get_sparse_embedding()
+        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+    
+    elif data_args.retrieval_method == "faiss":
+        retriever = RetrievalFaiss(
+            tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+        )
+        retriever.get_sparse_embedding()
+        retriever.build_faiss(num_clusters=data_args.num_clusters)
+        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+    
+    elif data_args.retrieval_method == "bm25":
+        retriever = RetrievalBM25(
+            tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+        )
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
