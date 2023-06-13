@@ -110,7 +110,6 @@ def run_sparse_retrieval(
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     if data_args.retrieval_method == "tfidf":
-        pass
         retriever = RetrievalTfidf(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
@@ -118,7 +117,6 @@ def run_sparse_retrieval(
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
     
     elif data_args.retrieval_method == "faiss":
-        pass
         retriever = RetrievalFaiss(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
@@ -127,7 +125,6 @@ def run_sparse_retrieval(
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
     
     elif data_args.retrieval_method == "bm25":
-        pass
         retriever = RetrievalBM25(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
