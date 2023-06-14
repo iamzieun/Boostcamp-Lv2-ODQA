@@ -118,8 +118,6 @@ def run_sparse_retrieval(
         )
         retriever.get_sparse_embedding()
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-        valid_df = retriever.retrieve(valid_datasets, topk=data_args.top_k_retrieval)
-        valid_df.to_csv("./outputs/test_dataset/valid_retrieval.csv")
     
     elif data_args.retrieval_method == "faiss":
         retriever = RetrievalFaiss(
@@ -128,16 +126,15 @@ def run_sparse_retrieval(
         retriever.get_sparse_embedding()
         retriever.build_faiss(num_clusters=data_args.num_clusters)
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-        valid_df = retriever.retrieve(valid_datasets, topk=data_args.top_k_retrieval)
-        valid_df.to_csv("./outputs/test_dataset/valid_retrieval.csv")
     
     elif data_args.retrieval_method == "bm25":
         retriever = RetrievalBM25(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-        valid_df = retriever.retrieve(valid_datasets, topk=data_args.top_k_retrieval)
-        valid_df.to_csv("./outputs/test_dataset/valid_retrieval.csv")
+    
+    valid_df = retriever.retrieve(valid_datasets, topk=data_args.top_k_retrieval)
+    valid_df.to_csv("./outputs/test_dataset/valid_retrieval.csv")
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
