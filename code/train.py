@@ -76,13 +76,13 @@ def main():
         config=config,
     )
 
-    print(
-        type(training_args),
-        type(model_args),
-        type(datasets),
-        type(tokenizer),
-        type(model),
-    )
+    print('type of data_args:', type(data_args))
+    print('type of training_args:', type(training_args))
+    print('type of model_args:', type(model_args))
+    print('type of datasets:', type(datasets))
+    print('type of tokenizer:', type(tokenizer))
+    print('type of model:', type(model))
+
 
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
