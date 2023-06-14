@@ -67,7 +67,9 @@ def main():
     set_seed(training_args.seed)
 
     datasets = load_from_disk(data_args.dataset_name)
+    valid_datasets = load_from_disk("../data/train_dataset")['validation']
     print(datasets)
+    print(valid_datasets)
 
     # AutoConfig를 이용하여 pretrained model과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
@@ -91,7 +93,7 @@ def main():
     # passage retrieval
     if data_args.eval_retrieval:
         datasets = run_sparse_retrieval(
-            tokenizer.tokenize, datasets, training_args, data_args,
+            tokenizer.tokenize, datasets, valid_datasets, training_args, data_args,
         )
 
     # eval or predict mrc model
@@ -102,6 +104,7 @@ def main():
 def run_sparse_retrieval(
     tokenize_fn: Callable[[str], List[str]],
     datasets: DatasetDict,
+    valid_datasets: Dataset,
     training_args: TrainingArguments,
     data_args: DataTrainingArguments,
     data_path: str = "../data",
@@ -115,6 +118,8 @@ def run_sparse_retrieval(
         )
         retriever.get_sparse_embedding()
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+        valid_df = retriever.retrieve(valid_datasets, topk=data_args.top_k_retrieval)
+        valid_df.to_csv("./outputs/test_dataset/valid_retrieval.csv")
     
     elif data_args.retrieval_method == "faiss":
         retriever = RetrievalFaiss(
@@ -123,12 +128,16 @@ def run_sparse_retrieval(
         retriever.get_sparse_embedding()
         retriever.build_faiss(num_clusters=data_args.num_clusters)
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+        valid_df = retriever.retrieve(valid_datasets, topk=data_args.top_k_retrieval)
+        valid_df.to_csv("./outputs/test_dataset/valid_retrieval.csv")
     
     elif data_args.retrieval_method == "bm25":
         retriever = RetrievalBM25(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+        valid_df = retriever.retrieve(valid_datasets, topk=data_args.top_k_retrieval)
+        valid_df.to_csv("./outputs/test_dataset/valid_retrieval.csv")
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
