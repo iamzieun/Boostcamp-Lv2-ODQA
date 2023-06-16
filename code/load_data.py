@@ -13,6 +13,7 @@ def add_data(origin_dataset: DatasetDict,
         origin_dataset (DatasetDict): 원본 DatasetDict 객체입니다.
         new_dataset_name (str, optional): 추가로 로드할 Dataset의 이름입니다. 기본값은 'squad_kor_v1'입니다.
         add_valid (bool, optional): 검증 데이터셋도 추가할지 여부를 결정합니다. 기본값은 False입니다.
+        drop_context_duplicate (bool, optional): 추가하는 데이터 중 context가 겹치는 데이터를 제거할지 여부를 결정합니다. 기본값은 True입니다.
 
     Returns:
         full_ds (DatasetDict): 원본 DatasetDict 객체에 새 데이터가 합쳐진, 중복이 제거된 이후 랜덤으로 섞인 DatasetDict 객체입니다.
