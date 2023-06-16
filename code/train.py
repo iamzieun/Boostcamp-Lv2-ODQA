@@ -12,6 +12,7 @@ from transformers import (
     set_seed,
 )
 from run_mrc import run_mrc
+from load_data import *
 import wandb
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,18 @@ def main():
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
 
-    datasets = load_from_disk(data_args.dataset_name)
+    origin_datasets = load_from_disk(data_args.dataset_name)
+
+    # 데이터 증강
+    if data_args.augment_data == "squad_kor_v1":
+        datasets = add_data(origin_dataset = origin_datasets,
+                            new_dataset_name = data_args.augment_data,
+                            add_valid = data_args.augment_valid_data 
+                                        if data_args.augment_valid_data is not None 
+                                        else False)
+    else:
+        datasets = origin_datasets
+
     print(datasets)
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
@@ -76,13 +88,13 @@ def main():
         config=config,
     )
 
-    print(
-        type(training_args),
-        type(model_args),
-        type(datasets),
-        type(tokenizer),
-        type(model),
-    )
+    print('type of data_args:', type(data_args))
+    print('type of training_args:', type(training_args))
+    print('type of model_args:', type(model_args))
+    print('type of datasets:', type(datasets))
+    print('type of tokenizer:', type(tokenizer))
+    print('type of model:', type(model))
+
 
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
