@@ -23,6 +23,7 @@ import evaluate
 from retriever.retrieval_tfidf import RetrievalTfidf
 from retriever.retrieval_faiss import RetrievalFaiss
 from retriever.retrieval_bm25 import RetrievalBM25
+from retriever.retrieval_elastic import ElasticRetrieval
 from trainer.trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoConfig,
@@ -127,6 +128,13 @@ def run_sparse_retrieval(
     elif data_args.retrieval_method == "bm25":
         retriever = RetrievalBM25(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+        )
+        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+    
+    elif data_args.retrieval_method == "elastic":
+        retriever = ElasticRetrieval(
+            data_path=data_path, context_path=context_path, 
+            setting_path='./retriever/elastic_setting.json', index_name='wiki-wiki'
         )
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
 
