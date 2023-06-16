@@ -60,7 +60,10 @@ def main():
                             new_dataset_name = data_args.augment_data,
                             add_valid = data_args.augment_valid_data 
                                         if data_args.augment_valid_data is not None 
-                                        else False)
+                                        else False,
+                            drop_context_duplicate = data_args.drop_context_duplicate 
+                                                    if data_args.drop_context_duplicate is not None 
+                                                    else True)
     else:
         datasets = origin_datasets
 

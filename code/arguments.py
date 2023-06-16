@@ -99,7 +99,13 @@ class DataTrainingArguments:
     augment_valid_data: Optional[bool] = field(
         default=None,
         metadata={
-            "help": "New dataset name (ex. squad_kor_v1)"
+            "help": "Whether augment validation set or not"
+        },
+    )
+    drop_context_duplicate: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Whether use unique context or not"
         },
     )
 
