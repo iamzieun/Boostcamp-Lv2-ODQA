@@ -90,6 +90,24 @@ class DataTrainingArguments:
     retrieval_method: str = field(
         default="bm25", metadata={"help": "Choose retriever for passage retrieval"}
     )
+    augment_data: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "New dataset name (ex. squad_kor_v1)"
+        },
+    )
+    augment_valid_data: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Whether augment validation set or not"
+        },
+    )
+    drop_context_duplicate: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Whether use unique context or not"
+        },
+    )
 
 @dataclass
 class WandbArguments:
