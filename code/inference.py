@@ -133,7 +133,6 @@ def run_sparse_retrieval(
         retriever = RetrievalBM25(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
-    
     elif data_args.retrieval_method == "elastic":
         retriever = ElasticRetrieval(
             data_path=data_path, context_path=context_path, 
@@ -141,7 +140,7 @@ def run_sparse_retrieval(
         )
 
     df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-    
+
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
         f = Features(
