@@ -6,10 +6,15 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 
 
 import logging
+import json
+import os
+import pickle
 import sys
 from typing import Callable, Dict, List, Tuple
 
 import numpy as np
+import evaluate
+import torch
 from arguments import DataTrainingArguments, ModelArguments
 from datasets import (
     Dataset,
@@ -19,11 +24,12 @@ from datasets import (
     Value,
     load_from_disk
 )
-import evaluate
-from retriever.retrieval_tfidf import RetrievalTfidf
-from retriever.retrieval_faiss import RetrievalFaiss
-from retriever.retrieval_bm25 import RetrievalBM25
-from trainer.trainer_qa import QuestionAnsweringTrainer
+from torch.utils.data import (
+    DataLoader,
+    SequentialSampler,
+    TensorDataset,
+)
+from tqdm import tqdm
 from transformers import (
     AutoConfig,
     AutoModelForQuestionAnswering,
@@ -34,6 +40,17 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
+
+from retriever.retrieval_bm25 import RetrievalBM25
+from retriever.retrieval_faiss import RetrievalFaiss
+from retriever.retrieval_dense import (
+    BertEncoder,
+    DualEncoderTrainer,
+    RetrievalDenseWithFaiss,
+    neat_logger,
+)
+from retriever.retrieval_tfidf import RetrievalTfidf
+from trainer.trainer_qa import QuestionAnsweringTrainer
 from utils.utils_qa import check_no_error, postprocess_qa_predictions
 
 logger = logging.getLogger(__name__)
@@ -90,7 +107,7 @@ def main():
 
     # passage retrieval
     if data_args.eval_retrieval:
-        datasets = run_sparse_retrieval(
+        datasets = run_retrieval(
             tokenizer.tokenize, datasets, training_args, data_args,
         )
 
@@ -99,7 +116,7 @@ def main():
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
 
-def run_sparse_retrieval(
+def run_retrieval(
     tokenize_fn: Callable[[str], List[str]],
     datasets: DatasetDict,
     training_args: TrainingArguments,
@@ -129,6 +146,177 @@ def run_sparse_retrieval(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
         df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+    elif data_args.retrieval_method == "dpr":
+        neat_logger("Setting hyperparameters..")
+        num_train_epochs = 5
+        batch_size = 4
+        top_k = 5
+        neg_samples = 7
+        num_faiss_clusters = 24
+
+        neat_logger("Setting the directory paths for code, data, models, etc..")
+        # code_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = "../data"
+        models_dir = "models"
+        os.makedirs(models_dir, exist_ok=True)
+
+        # p_encoder과 q_encoder의 각 경로를 설정합니다.
+        neat_logger("Defining paths for dual encoders..")
+        p_encoder_path = os.path.join(models_dir, "p_encoder.pth")
+        q_encoder_path = os.path.join(models_dir, "q_encoder.pth")
+
+        # 검색에 사용할 wikipedia documents의 경로를 설정합니다.
+        neat_logger("Defining wiki docs path..")
+        context_path = "wikipedia_documents.json"
+        wiki_path = os.path.join(data_dir, context_path)
+
+        # 지문 임베딩(passage embeddings), Faiss 클러스터 인덱스 경로를 지정합니다.
+        neat_logger("Defining passage embedding path..")
+        p_embs_path = "passage_embeddings.bin"
+        indexer_path = f"faiss_clusters_{num_faiss_clusters}.index"
+        p_embs_path = os.path.join(data_dir, p_embs_path)
+        indexer_path = os.path.join(data_dir, indexer_path)
+
+        neat_logger("Defining passage/query encoders..")
+        encoder_checkpoint = "klue/bert-base"
+        config = AutoConfig.from_pretrained(encoder_checkpoint)
+        tokenizer = AutoTokenizer.from_pretrained(encoder_checkpoint)
+        q_encoder = BertEncoder(config).to(training_args.device)
+
+        # 이미 학습된 p_encoder, q_encoder가 없으면 학습합니다.
+        if not os.path.isfile(q_encoder_path):
+            neat_logger("Query encoder's weight files not detected locally")
+
+            neat_logger("Loading training/dev sets..")
+            total_dataset = load_from_disk("../data/train_dataset")
+
+            train_dataset = total_dataset["train"]
+            eval_dataset = total_dataset["validation"]
+
+            neat_logger("Defining passage encoder..")
+            p_encoder = BertEncoder(config).to(training_args.device)
+
+            neat_logger("Defining trainer..")
+            training_args = TrainingArguments(
+                output_dir="outputs_dpr",
+                evaluation_strategy="epoch",
+                per_device_train_batch_size=batch_size,
+                per_device_eval_batch_size=batch_size,
+                learning_rate=1e-5,
+                weight_decay=0.01,
+                num_train_epochs=num_train_epochs,
+                logging_strategy="epoch",
+                save_strategy="epoch",
+                fp16=True,
+            )
+
+            neat_logger("Defining retriever..")
+            dual_encoder = DualEncoderTrainer(
+                args=training_args,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
+                tokenizer=tokenizer,
+                p_encoder=p_encoder,
+                q_encoder=q_encoder,
+                neg_samples=neg_samples,
+            )
+
+            neat_logger("Training retriever..")
+            neat_logger(f"Initial evaluation loss: {dual_encoder.evaluate()}")
+            dual_encoder.train()
+
+            # p_encoder & q_encoder를 저장합니다.
+            neat_logger("Saving model weights..")
+            dual_encoder.save_model_weights(models_dir)
+        else:
+            neat_logger("Query encoder's weight files detected locally")
+
+        q_encoder.load_state_dict(torch.load(q_encoder_path))
+
+        # 지문 임베딩(passage embeddings)을 저장한 bin 파일이 없으면 새로이 만듭니다.
+        if (
+            not os.path.isfile(indexer_path)
+            or not os.path.isfile(p_embs_path)
+        ):
+            neat_logger("Local copies of Faiss embeddings not found")
+
+            neat_logger("Building p_embs setup..")
+            p_encoder = BertEncoder(config).to(training_args.device)
+            p_encoder.load_state_dict(torch.load(p_encoder_path))
+
+            # Wikipedia documents 파일 불러오기
+            neat_logger("Loading wikipedia documents..")
+            with open(wiki_path, "r", encoding="utf-8") as f:
+                wiki = json.load(f)
+            search_corpus = list(
+                dict.fromkeys([v["text"] for v in wiki.values()])
+            )
+
+            neat_logger("Constructing wiki docs tokenizer, dataset, and dataloader..")
+            eval_p_seqs = tokenizer(
+                search_corpus,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt",
+            )
+            eval_dataset = TensorDataset(
+                eval_p_seqs["input_ids"],
+                eval_p_seqs["attention_mask"],
+                eval_p_seqs["token_type_ids"],
+            )
+
+            eval_sampler = SequentialSampler(eval_dataset)
+            eval_dataloader = DataLoader(
+                eval_dataset,
+                sampler=eval_sampler,
+                batch_size=batch_size,
+            )
+
+            p_embs = []
+            with torch.no_grad():
+                epoch_iterator = tqdm(
+                    eval_dataloader,
+                    desc="Building Passage Embeddings",
+                    position=0,
+                    leave=True,
+                )
+                p_encoder.eval()
+
+                for batch in epoch_iterator:
+                    batch = tuple(b.cuda() for b in batch)
+
+                    p_inputs = {
+                        "input_ids": batch[0],
+                        "attention_mask": batch[1],
+                        "token_type_ids": batch[2],
+                    }
+
+                    outputs = p_encoder(**p_inputs).to("cpu").numpy()
+                    p_embs.extend(outputs)
+            p_embs = np.array(p_embs)
+
+            neat_logger("Saving passage embeddings..")
+            with open(p_embs_path, "wb") as f:
+                pickle.dump(p_embs, f)
+
+            # Faiss index 파일을 만들고 저장합니다.
+            neat_logger("Building Faiss retriever..")
+            retriever = RetrievalDenseWithFaiss(indexer_path=indexer_path)
+            retriever.build_faiss(p_embs=p_embs)
+
+            neat_logger("Saving Faiss retriever..")
+            retriever.save_index(indexer_path=indexer_path)
+        else:
+            neat_logger("Local copies of Faiss embeddings found")
+            retriever = RetrievalDenseWithFaiss(indexer_path=indexer_path)
+
+        df = retriever.retrieve(
+            datasets["validation"],
+            tokenizer=tokenizer,
+            q_encoder=q_encoder,
+            top_k=top_k,
+            device=training_args.device,
+        )
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
