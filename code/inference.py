@@ -5,11 +5,13 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 """
 
 
+import os
 import logging
 import sys
 from typing import Callable, Dict, List, Tuple
 
 import numpy as np
+import pandas as pd
 from arguments import DataTrainingArguments, ModelArguments
 from datasets import (
     Dataset,
@@ -153,7 +155,9 @@ def run_sparse_retrieval(
 
     # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
     elif training_args.do_eval:
-        df.to_csv("./outputs/valid_dataset/valid_retrieval.csv")
+        output_dir = "./outputs/valid_dataset/"
+        os.makedirs(output_dir, exist_ok=True)
+        df.to_csv(os.path.join(output_dir, "valid_retrieval.csv"))
         f = Features(
             {
                 'context': Value(dtype='string', id=None),
@@ -322,6 +326,21 @@ def run_mrc(
 
         trainer.log_metrics("test", metrics)
         trainer.save_metrics("test", metrics)
+
+        # 분석용 통합 csv 저장
+        original_valid_path = "/opt/ml/level2_nlp_mrc-nlp-12/data/train_dataset"
+        df_valid = pd.DataFrame(load_from_disk(original_valid_path)['validation'])
+        retriever_path = "/opt/ml/level2_nlp_mrc-nlp-12/code/outputs/valid_dataset/valid_retrieval.csv"
+        df_retriever = pd.read_csv(retriever_path, index_col=0)
+        reader_path = "/opt/ml/level2_nlp_mrc-nlp-12/code/outputs/valid_dataset/predictions.json"
+        df_reader = pd.DataFrame(pd.read_json(reader_path, typ='series')).reset_index().rename(columns={'index':'id', 0:'answers'})
+        df_retriever = df_retriever.rename(columns={'answers':'original_answers'})
+        df_retriever['answers'] = df_valid['answers']
+        df_retriever['original_answers'] = [answers['text'][0] for answers in df_retriever['answers']]
+        df_retriever = df_retriever.drop(columns = "answers")
+        df_retriever = pd.merge(df_retriever, df_reader, on='id')
+        df = df_retriever[["id", "question", "original_context", "context", "original_answers", "answers"]]
+        df.to_csv("/opt/ml/level2_nlp_mrc-nlp-12/code/outputs/valid_dataset/valid_inference.csv", index=False)
 
 
 if __name__ == "__main__":
