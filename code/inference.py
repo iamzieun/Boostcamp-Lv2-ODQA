@@ -5,11 +5,13 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 """
 
 
+import os
 import logging
 import sys
 from typing import Callable, Dict, List, Tuple
 
 import numpy as np
+import pandas as pd
 from arguments import DataTrainingArguments, ModelArguments
 from datasets import (
     Dataset,
@@ -52,7 +54,9 @@ def main():
     training_args.do_train = True
 
     print(f"model is from {model_args.model_name_or_path}")
-    print(f"data is from {data_args.dataset_name}")
+    print(f"test data is from {data_args.dataset_name}")
+    print(f"valid data is from {data_args.valid_dataset_name}")
+
 
     # logging 설정
     logging.basicConfig(
@@ -67,8 +71,11 @@ def main():
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
 
-    datasets = load_from_disk(data_args.dataset_name)
-    print(datasets)
+    test_datasets = load_from_disk(data_args.dataset_name)
+    print(test_datasets)
+
+    valid_datasets = DatasetDict({'validation': load_from_disk(data_args.valid_dataset_name)['validation']})
+    print(valid_datasets)
 
     # AutoConfig를 이용하여 pretrained model과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
@@ -89,15 +96,16 @@ def main():
         config=config,
     )
 
-    # passage retrieval
-    if data_args.eval_retrieval:
-        datasets = run_sparse_retrieval(
-            tokenizer.tokenize, datasets, training_args, data_args,
-        )
-
     # eval or predict mrc model
-    if training_args.do_eval or training_args.do_predict:
-        run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
+    if training_args.do_predict:
+        test_datasets = run_sparse_retrieval(
+            tokenizer.tokenize, test_datasets, training_args, data_args)
+        run_mrc(data_args, training_args, model_args, test_datasets, tokenizer, model)
+
+    if training_args.do_eval:
+        valid_datasets = run_sparse_retrieval(
+            tokenizer.tokenize, valid_datasets, training_args, data_args)
+        run_mrc(data_args, training_args, model_args, valid_datasets, tokenizer, model)
 
 
 def run_sparse_retrieval(
@@ -115,7 +123,6 @@ def run_sparse_retrieval(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
         retriever.get_sparse_embedding()
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
     
     elif data_args.retrieval_method == "faiss":
         retriever = RetrievalFaiss(
@@ -123,20 +130,18 @@ def run_sparse_retrieval(
         )
         retriever.get_sparse_embedding()
         retriever.build_faiss(num_clusters=data_args.num_clusters)
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
     
     elif data_args.retrieval_method == "bm25":
         retriever = RetrievalBM25(
             tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
         )
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-    
     elif data_args.retrieval_method == "elastic":
         retriever = ElasticRetrieval(
             data_path=data_path, context_path=context_path, 
             setting_path='./retriever/elastic_setting.json', index_name='wiki-wiki'
         )
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
+
+    df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
@@ -150,19 +155,19 @@ def run_sparse_retrieval(
 
     # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
     elif training_args.do_eval:
+        output_dir = "./outputs/valid_dataset/"
+        os.makedirs(output_dir, exist_ok=True)
+        df.to_csv(os.path.join(output_dir, "valid_retrieval.csv"))
         f = Features(
             {
-                "answers": Sequence(
-                    feature={
-                        "text": Value(dtype="string", id=None),
-                        "answer_start": Value(dtype="int32", id=None),
-                    },
-                    length=-1,
-                    id=None,
-                ),
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
+                'context': Value(dtype='string', id=None),
+                'id': Value(dtype='string', id=None),
+                'question': Value(dtype='string', id=None),
+                'answers': {
+                    'answer_start': Sequence(Value(dtype='int64', id=None)),
+                    'text': Sequence(Value(dtype='string', id=None))
+                },
+                'original_context': Value(dtype='string', id=None)   # 추가
             }
         )
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
@@ -264,7 +269,7 @@ def run_mrc(
             features=features,
             predictions=predictions,
             max_answer_length=data_args.max_answer_length,
-            output_dir=training_args.output_dir,
+            output_dir=training_args.output_dir if training_args.do_predict else "./outputs/valid_dataset/",
         )
         # Metric을 구할 수 있도록 Format을 맞춰줍니다.
         formatted_predictions = [
@@ -321,6 +326,21 @@ def run_mrc(
 
         trainer.log_metrics("test", metrics)
         trainer.save_metrics("test", metrics)
+
+        # 분석용 통합 csv 저장
+        original_valid_path = "/opt/ml/level2_nlp_mrc-nlp-12/data/train_dataset"
+        df_valid = pd.DataFrame(load_from_disk(original_valid_path)['validation'])
+        retriever_path = "/opt/ml/level2_nlp_mrc-nlp-12/code/outputs/valid_dataset/valid_retrieval.csv"
+        df_retriever = pd.read_csv(retriever_path, index_col=0)
+        reader_path = "/opt/ml/level2_nlp_mrc-nlp-12/code/outputs/valid_dataset/predictions.json"
+        df_reader = pd.DataFrame(pd.read_json(reader_path, typ='series')).reset_index().rename(columns={'index':'id', 0:'answers'})
+        df_retriever = df_retriever.rename(columns={'answers':'original_answers'})
+        df_retriever['answers'] = df_valid['answers']
+        df_retriever['original_answers'] = [answers['text'][0] for answers in df_retriever['answers']]
+        df_retriever = df_retriever.drop(columns = "answers")
+        df_retriever = pd.merge(df_retriever, df_reader, on='id')
+        df = df_retriever[["id", "question", "original_context", "context", "original_answers", "answers"]]
+        df.to_csv("/opt/ml/level2_nlp_mrc-nlp-12/code/outputs/valid_dataset/valid_inference.csv", index=False)
 
 
 if __name__ == "__main__":
