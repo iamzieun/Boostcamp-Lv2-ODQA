@@ -68,7 +68,7 @@ class BertEncoder(BertPreTrainedModel):
 
     def forward(
             self,
-            input_ids: Optional[torch.LongTensor] = None,
+            input_ids: torch.LongTensor = None,
             attention_mask: Optional[torch.LongTensor] = None,
             token_type_ids: Optional[torch.LongTensor] = None,
         ):
@@ -81,7 +81,7 @@ class BertEncoder(BertPreTrainedModel):
         return pooled_output
 
 
-class DualEncoderTrainer:
+class BiEncoderTrainer:
     def __init__(
         self,
         args: TrainingArguments = None,
@@ -90,6 +90,7 @@ class DualEncoderTrainer:
         tokenizer: PreTrainedTokenizerBase = None,
         p_encoder: BertEncoder = None,
         q_encoder: BertEncoder = None,
+        pq_encoders_dir: str = None,
         neg_samples: int = 7,
     ) -> None:
         # TODO: add docstring
@@ -102,6 +103,7 @@ class DualEncoderTrainer:
 
         self.p_encoder = p_encoder
         self.q_encoder = q_encoder
+        self.pq_encoders_dir = pq_encoders_dir
 
         self.neg_samples = neg_samples
 
@@ -283,7 +285,7 @@ class DualEncoderTrainer:
         )
 
         flag = True
-        for _ in train_iterator:
+        for idx in train_iterator:
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
                     if flag:
@@ -364,6 +366,9 @@ class DualEncoderTrainer:
             eval_loss = self.evaluate()
             neat_logger(f"eval_loss: {eval_loss}")
 
+            neat_logger(f"Saving p/q encoder weights at epoch {idx+1}..")
+            self.save_model_weights()
+
     def evaluate(
         self,
         args: TrainingArguments = None,
@@ -434,19 +439,13 @@ class DualEncoderTrainer:
 
         return eval_loss
 
-    def save_model_weights(
-        self,
-        model_dir: str = None,
-    ) -> None:
+    def save_model_weights(self) -> None:
         # TODO: add docstring
-        if model_dir is None:
-            model_dir = "../models"
-
         code_dir = os.path.dirname(os.path.abspath(__file__))
-        os.makedirs(os.path.join(code_dir, model_dir), exist_ok=True)
+        os.makedirs(os.path.join(code_dir, self.pq_encoders_dir), exist_ok=True)
 
-        p_encoder_path = os.path.join(model_dir, "p_encoder.pth")
-        q_encoder_path = os.path.join(model_dir, "q_encoder.pth")
+        p_encoder_path = os.path.join(self.pq_encoders_dir, "p_encoder.pth")
+        q_encoder_path = os.path.join(self.pq_encoders_dir, "q_encoder.pth")
 
         torch.save(self.p_encoder.state_dict(), p_encoder_path)
         torch.save(self.q_encoder.state_dict(), q_encoder_path)
@@ -455,51 +454,45 @@ class DualEncoderTrainer:
 class RetrievalDenseWithFaiss:
     def __init__(
         self,
+        p_embds_path: str = None,
         indexer_path: str = None,
         num_clusters: Optional[int] = 48,
     ) -> None:
-        """
-        Args:
-            p_embs (torch.Tensor):
-                위에서 사용한 Passage Encoder로 구한
-                전체 Passage들의 Dense Representation을 받아옵니다.
-
-        Summary:
-            초기화하는 부분
-            `build_faiss` 메소드도 여기서 수행하면 좋을 것 같습니다.
-        """
+        # TODO: add docstring
         assert indexer_path is not None, "Index 저장 경로를 지정하세요."
 
+        self.p_embds_path = p_embds_path
         self.num_clusters = num_clusters
 
-        if not os.path.isfile(indexer_path):
-            self.build_faiss(num_clusters=num_clusters)
+        if (
+            not os.path.isfile(p_embds_path)
+            or not os.path.isfile(indexer_path)
+        ):
+            self.build_faiss()
             self.save_index(indexer_path=indexer_path)
 
         self.indexer = self.load_index(indexer_path=indexer_path)
 
-    def build_faiss(
-        self,
-        p_embs: torch.Tensor = None,
-        num_clusters: Optional[int] = 48,
-    ) -> None:
+    def build_faiss(self) -> None:
         """
         Note:
             위에서 Faiss를 사용했던 기억을 떠올려보면,
             Indexer를 구성해서 .search() 메소드를 활용했습니다.
             여기서는 Indexer 구성을 해주도록 합시다.
         """
-        emb_dim = p_embs.shape[-1]
+        with open(self.p_embds_path, "rb") as f:
+            p_embds = pickle.load(f)
+        emb_dim = p_embds.shape[-1]
 
         quantizer = faiss.IndexFlatL2(emb_dim)
         self.indexer = faiss.IndexIVFScalarQuantizer(
             quantizer,
             quantizer.d,
-            num_clusters,
+            self.num_clusters,
             faiss.METRIC_L2,
         )
-        self.indexer.train(p_embs)
-        self.indexer.add(p_embs)
+        self.indexer.train(p_embds)
+        self.indexer.add(p_embds)
 
     def load_index(
         self,
@@ -660,22 +653,22 @@ def main():
     neat_logger("Setting hyperparameters..")
     num_train_epochs = 10
     batch_size = 4
-    top_k = 5
+    top_k = 30
     neg_samples = 7
-    num_faiss_clusters = 24
+    num_faiss_clusters = 96
 
     # code, data, models 등의 디렉토리를 설정합니다.
     neat_logger("Setting the directory paths for code, data, models, etc..")
     code_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_dir = os.path.join(code_dir, '..', 'data')
     dataset_dir = os.path.join(data_dir, 'train_dataset')
-    models_dir = os.path.join(code_dir, "models")
-    os.makedirs(models_dir, exist_ok=True)
+    pq_encoders_dir = os.path.join(code_dir, "models")
+    os.makedirs(pq_encoders_dir, exist_ok=True)
 
     # p_encoder과 q_encoder의 각 경로를 설정합니다.
-    neat_logger("Defining paths for dual encoders..")
-    p_encoder_path = os.path.join(models_dir, "p_encoder.pth")
-    q_encoder_path = os.path.join(models_dir, "q_encoder.pth")
+    neat_logger("Defining paths for bi-encoders..")
+    p_encoder_path = os.path.join(pq_encoders_dir, "p_encoder.pth")
+    q_encoder_path = os.path.join(pq_encoders_dir, "q_encoder.pth")
 
     # 검색에 사용할 wikipedia documents의 경로를 설정합니다.
     neat_logger("Defining wiki docs path..")
@@ -684,9 +677,9 @@ def main():
 
     # 지문 임베딩(passage embeddings), Faiss 클러스터 인덱스 경로를 지정합니다.
     neat_logger("Defining passage embedding path..")
-    p_embs_path = "passage_embeddings.bin"
+    p_embds_path = "passage_embeddings.bin"
     indexer_path = f"faiss_clusters_{num_faiss_clusters}.index"
-    p_embs_path = os.path.join(data_dir, p_embs_path)
+    p_embds_path = os.path.join(data_dir, p_embds_path)
     indexer_path = os.path.join(data_dir, indexer_path)
 
     parser = argparse.ArgumentParser(description="")
@@ -725,7 +718,7 @@ def main():
         neat_logger(context)
 
     neat_logger("Defining passage/query encoders..")
-    encoder_checkpoint = "klue/bert-base"
+    encoder_checkpoint = "klue/roberta-large"
     config = AutoConfig.from_pretrained(encoder_checkpoint)
     tokenizer = AutoTokenizer.from_pretrained(encoder_checkpoint)
     p_encoder = BertEncoder(config).to(device)
@@ -748,30 +741,31 @@ def main():
         )
 
         neat_logger("Defining retriever..")
-        dual_encoder = DualEncoderTrainer(
+        biencoder = BiEncoderTrainer(
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             tokenizer=tokenizer,
             p_encoder=p_encoder,
             q_encoder=q_encoder,
+            pq_encoders_dir=pq_encoders_dir,
             neg_samples=neg_samples,
         )
 
         neat_logger("Training retriever..")
-        neat_logger(f"Initial evaluation loss: {dual_encoder.evaluate()}")
-        dual_encoder.train()
+        neat_logger(f"Initial evaluation loss: {biencoder.evaluate()}")
+        biencoder.train()
 
         # p_encoder & q_encoder를 저장합니다.
         neat_logger("Saving model weights..")
-        dual_encoder.save_model_weights(models_dir)
+        biencoder.save_model_weights()
 
     # 지문 임베딩(passage embeddings)을 저장한 bin 파일이 없으면 새로이 만듭니다.
     if (
         not os.path.isfile(indexer_path)
-        or not os.path.isfile(p_embs_path)
+        or not os.path.isfile(p_embds_path)
     ):
-        neat_logger("Building p_embs setup..")
+        neat_logger("Building p_embds setup..")
         p_encoder.load_state_dict(torch.load(p_encoder_path))
 
         # Wikipedia documents 파일 불러오기
@@ -782,7 +776,9 @@ def main():
             dict.fromkeys([v["text"] for v in wiki.values()])
         )
 
-        neat_logger("Constructing wiki docs tokenizer, dataset, and dataloader..")
+        neat_logger(
+            "Constructing wiki docs tokenizer, dataset, and dataloader.."
+        )
         eval_p_seqs = tokenizer(
             search_corpus,
             padding="max_length",
@@ -802,7 +798,7 @@ def main():
             batch_size=batch_size,
         )
 
-        p_embs = []
+        p_embds = []
         with torch.no_grad():
             epoch_iterator = tqdm(
                 eval_dataloader,
@@ -822,17 +818,17 @@ def main():
                 }
 
                 outputs = p_encoder(**p_inputs).to("cpu").numpy()
-                p_embs.extend(outputs)
-        p_embs = np.array(p_embs)
+                p_embds.extend(outputs)
+        p_embds = np.array(p_embds)
 
         neat_logger("Saving passage embeddings..")
-        with open(p_embs_path, "wb") as f:
-            pickle.dump(p_embs, f)
+        with open(p_embds_path, "wb") as f:
+            pickle.dump(p_embds, f)
 
         # Faiss index 파일을 만들고 저장합니다.
         neat_logger("Building Faiss retriever..")
         retriever = RetrievalDenseWithFaiss(indexer_path=indexer_path)
-        retriever.build_faiss(p_embs=p_embs)
+        retriever.build_faiss(p_embds=p_embds)
 
         neat_logger("Saving Faiss retriever..")
         retriever.save_index(indexer_path=indexer_path)
@@ -840,7 +836,7 @@ def main():
         retriever = RetrievalDenseWithFaiss(indexer_path=indexer_path)
 
     q_encoder.load_state_dict(torch.load(q_encoder_path))
-    # with open(p_embs_path, "rb") as f:
+    # with open(p_embds_path, "rb") as f:
     #     p_embeddings = pickle.load(f)
 
     df = retriever.retrieve(
