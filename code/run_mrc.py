@@ -11,6 +11,7 @@ from transformers import (
     TrainingArguments,
 )
 from utils.utils_qa import check_no_error, postprocess_qa_predictions
+from load_data import *
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ def run_mrc(
 
     # Train preprocessing / 전처리를 진행합니다.
     def prepare_train_features(examples):
+        logger.info(f"Train example: {examples}")
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
         tokenized_examples = tokenizer(
@@ -234,6 +236,7 @@ def run_mrc(
         tokenizer=tokenizer,
         data_collator=data_collator,
         post_process_function=post_processing_function,
+        override_dataloader=True if data_args.sort_data else None,
         compute_metrics=compute_metrics,
     )
 

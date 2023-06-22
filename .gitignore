@@ -9,8 +9,7 @@ wandb/
 
 wandb/
 eda/
-run script/
-keep/
+script_exp/
 
 *.log
 *.out
