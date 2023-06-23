@@ -90,8 +90,8 @@ def make_retrieved_context():
     Returns:
         full_ds (DatasetDict): 'train'과 'validation' 키를 갖는 DatasetDict 객체.
     """
-    train_df = pd.read_csv("data/retrieved_context_dataset/train_3.csv")
-    valid_df = pd.read_csv("data/retrieved_context_dataset/train_3.csv")
+    train_df = pd.read_csv("../data/retrieved_context_dataset/train_3.csv")
+    valid_df = pd.read_csv("../data/retrieved_context_dataset/train_3.csv")
 
     train_df['answers'] = train_df['answers'].apply(str).apply(eval)
     valid_df['answers'] = valid_df['answers'].apply(str).apply(eval)
