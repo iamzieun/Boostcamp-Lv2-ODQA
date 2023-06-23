@@ -1,4 +1,5 @@
 import pandas as pd
+from transformers import AutoTokenizer
 from datasets import Dataset, DatasetDict, load_dataset
 
 
@@ -50,3 +51,25 @@ def add_data(origin_dataset: DatasetDict,
     })
 
     return full_ds
+
+
+def sort_train_datasets(datasets: DatasetDict):
+    df = pd.DataFrame(datasets["train"])
+
+    tokenizer = AutoTokenizer.from_pretrained('klue/roberta-large', use_fast=True)
+    tokenize_fn = tokenizer.tokenize
+
+    df['context_len'] = [len(tokenize_fn(text)) for text in df['context']]
+    df['answers_len'] = [len(tokenize_fn(text['text'][0])) for text in df['answers']]
+
+    df = df.sort_values(['answers_len', 'context_len'])
+    df.drop(['context_len', 'answers_len', '__index_level_0__'], axis=1, inplace=True)
+
+    sorted_datasets = Dataset.from_pandas(df)
+
+    full_datasets = DatasetDict({
+            'train': sorted_datasets,
+            'validation': datasets['validation']
+        })
+
+    return full_datasets

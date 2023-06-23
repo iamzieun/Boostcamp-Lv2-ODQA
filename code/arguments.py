@@ -112,6 +112,12 @@ class DataTrainingArguments:
             "help": "Whether use unique context or not"
         },
     )
+    sort_data: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Whether sort train dataset or not"
+        },
+    )
 
 @dataclass
 class WandbArguments:

@@ -38,6 +38,7 @@ def main():
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
+    print(training_args)
 
     # logging 설정
     logging.basicConfig(
@@ -66,6 +67,10 @@ def main():
                                                     else True)
     else:
         datasets = origin_datasets
+
+    # 데이터 정렬
+    if data_args.sort_data:
+        datasets = sort_train_datasets(datasets)
 
     print(datasets)
 

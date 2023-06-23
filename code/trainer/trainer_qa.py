@@ -16,6 +16,7 @@
 Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
 """
 
+from torch.utils.data import DataLoader
 from transformers import Trainer, is_datasets_available, is_torch_tpu_available
 from transformers.trainer_utils import PredictionOutput
 
@@ -28,10 +29,11 @@ if is_torch_tpu_available():
 
 # Huggingface의 Trainer를 상속받아 QuestionAnswering을 위한 Trainer를 생성합니다.
 class QuestionAnsweringTrainer(Trainer):
-    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
+    def __init__(self, *args, eval_examples=None, post_process_function=None, override_dataloader=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
+        self.override_dataloader = override_dataloader
 
     def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
@@ -110,3 +112,30 @@ class QuestionAnsweringTrainer(Trainer):
             test_examples, test_dataset, output.predictions, self.args
         )
         return predictions
+
+    def get_train_dataloader(self) -> DataLoader:
+        """
+        Returns the training :class:`~torch.utils.data.DataLoader`.
+
+        Will use no sampler if :obj:`self.train_dataset` does not implement :obj:`__len__`, a random sampler (adapted
+        to distributed training if necessary) otherwise.
+
+        Subclass and override this method if you want to inject some custom behavior.
+        """
+        if self.override_dataloader:
+            # curriculum learning을 할 때에만 data를 shuffle하지 않고 차례대로 가져옴
+            if self.train_dataset is None:
+                raise ValueError("Trainer: training requires a train_dataset.")
+            
+            return DataLoader(
+                self.train_dataset,
+                batch_size=self.args.train_batch_size,
+                collate_fn=self.data_collator,
+                drop_last=self.args.dataloader_drop_last,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+                shuffle=False,
+            )
+        else:
+            # 기본 Trainer 클래스의 get_train_dataloader 메소드를 호출
+            return super().get_train_dataloader()
