@@ -8,7 +8,6 @@ wandb/
 .vscode/
 
 wandb/
-eda/
 script_exp/
 
 *.log
