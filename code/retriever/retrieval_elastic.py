@@ -3,11 +3,21 @@ import re
 import json
 import pandas as pd
 from tqdm.auto import tqdm
+
 from datasets import Dataset
 from elasticsearch import Elasticsearch
 from typing import List, Optional, Tuple, Union
 
-def corpus_loader(dataset_path):
+def corpus_loader(dataset_path: str) -> List[dict]:
+    """
+    JSON 파일로부터 wikipedia documents를 불러온다. 추가적인 전처리도 수행한다. 
+    
+    Args:
+        dataset_path: wikipedia documents 파일 경로
+    
+    Return:
+        ditionary의 list, 각각은 전처리된 document를 가진다. 
+    """
     with open(dataset_path, "r") as f:
         wiki = json.load(f)
 
@@ -17,7 +27,16 @@ def corpus_loader(dataset_path):
     return wiki_corpus
 
 # 삽입할 데이터 전처리
-def preprocess(text):
+def preprocess(text: str) -> str:
+    """
+    개행문자, 특수문자 등을 제거하는 전처리 함수
+    
+    Args:
+        text: 전처리할 document
+    
+    Return:
+        전처리된 text
+    """
     text = re.sub(r"\n", " ", text)
     text = re.sub(r"\\n", " ", text)
     text = re.sub(r"#", " ", text)
@@ -26,7 +45,19 @@ def preprocess(text):
     
     return text
 
-def es_search(es, index_name, question, topk):
+def es_search(es: Elasticsearch, index_name: str, question: str, topk: int) -> dict:
+    """
+    질문에 맞는 document를 Elasticsearch 인덱스를 통해 검색
+    
+    Args:
+        es -- Elasticsearch object.
+        index_name -- 검색할 인덱스 이름 
+        question -- 검색 쿼리 
+        topk -- return할 top-k개 document 개수 
+    
+    Return:
+        검색 결과를 담은 dictionary
+    """
     query = {"query": 
                 {"bool": 
                     {"must": 
@@ -50,6 +81,13 @@ class ElasticRetrieval:
         setting_path: Optional[str] = None, 
         index_name: Optional[str] = None, 
     ) -> None:
+        """       
+        Args:
+            data_path: 데이터 경로
+            context_path: wikipedia document 경로
+            setting_path: elastic search setting 파일 경로
+            index_name: 검색에 사용할 인덱스 이름
+        """
 
         # Declare ElasticSearch class
         self.es = Elasticsearch(
@@ -85,6 +123,17 @@ class ElasticRetrieval:
     def retrieve(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
     ) -> Union[Tuple[List, List], pd.DataFrame]:
+        """
+        쿼리나 데이터셋에 알맞은 document를 retrieve하는 함수
+        
+        Args:
+            query_or_dataset: 검색 대상이 되는 쿼리 혹은 데이터셋
+            topk: return할 top-k개 document 개수 
+        
+        Return:
+        If the input is a string, it Return the scores and indices of the top documents.
+        If the input is a Dataset, it Return a DataFrame containing the retrieved documents for each query.
+        """
 
         if isinstance(query_or_dataset, str):
             doc_scores, doc_indices, docs = self.get_relevant_doc(
@@ -134,6 +183,16 @@ class ElasticRetrieval:
         return cqas
 
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
+        """
+        쿼리와 가장 관련있는 documment를 찾는 함수 
+        
+        Args:
+            query: 문자열 타입 쿼리 
+            k: return할 top-k개 document 개수
+        
+        Return:
+            점수, 인덱스, top document를 담은 tuple
+        """
         doc_score = []
         doc_index = []
         res = es_search(self.es, self.index_name, query, k)
@@ -149,6 +208,16 @@ class ElasticRetrieval:
     def get_relevant_doc_bulk(
         self, queries: List, k: Optional[int] = 1
     ) -> Tuple[List, List]:
+        """
+        쿼리의 리스트와 가장 관련있는 documment를 찾는 함수 
+        
+        Args:
+            queries: 문자열 타입 쿼리의 리스트
+            k: 각 쿼리마다 return할 top-k개 document 개수
+        
+        Return:
+            각 쿼리에 대한 점수, 인덱스, top document를 담은 tuple
+        """
 
         total_docs = []
         doc_scores = []
