@@ -1,6 +1,7 @@
 import pandas as pd
 from transformers import AutoTokenizer
 from datasets import Dataset, DatasetDict, load_dataset
+from transformers import AutoTokenizer
 
 
 def add_data(origin_dataset: DatasetDict, 
@@ -19,7 +20,6 @@ def add_data(origin_dataset: DatasetDict,
     Returns:
         full_ds (DatasetDict): 원본 DatasetDict 객체에 새 데이터가 합쳐진, 중복이 제거된 이후 랜덤으로 섞인 DatasetDict 객체입니다.
     """
-
     # train dataset
     origin_train_df = pd.DataFrame(origin_dataset['train'])
     new_train_df = pd.DataFrame(load_dataset(new_dataset_name)['train'])
@@ -54,6 +54,15 @@ def add_data(origin_dataset: DatasetDict,
 
 
 def sort_train_datasets(datasets: DatasetDict):
+    """
+    훈련 데이터셋을 answers과 context의 길이에 따라 정렬합니다.
+
+    Args:
+        datasets (DatasetDict): 정렬할 데이터셋. 'train' 키로 훈련 데이터셋을 포함해야 합니다.
+
+    Returns:
+        full_datasets (DatasetDict): 정렬된 훈련 데이터셋과 원본 검증 데이터셋을 포함한 DatasetDict 객체.
+    """
     df = pd.DataFrame(datasets["train"])
 
     tokenizer = AutoTokenizer.from_pretrained('klue/roberta-large', use_fast=True)
@@ -73,3 +82,27 @@ def sort_train_datasets(datasets: DatasetDict):
         })
 
     return full_datasets
+
+
+def make_retrieved_context():
+    """
+    CSV 파일로부터 훈련 및 검증 데이터셋을 로드하고, 이를 DatasetDict 형태로 반환합니다.
+
+    Returns:
+        full_ds (DatasetDict): 'train'과 'validation' 키를 갖는 DatasetDict 객체.
+    """
+    train_df = pd.read_csv("../data/retrieved_context_dataset/train_3.csv")
+    valid_df = pd.read_csv("../data/retrieved_context_dataset/train_3.csv")
+
+    train_df['answers'] = train_df['answers'].apply(str).apply(eval)
+    valid_df['answers'] = valid_df['answers'].apply(str).apply(eval)
+    
+    train_ds = Dataset.from_pandas(train_df)
+    valid_ds = Dataset.from_pandas(valid_df)
+
+    full_ds = DatasetDict({
+        'train': train_ds,
+        'validation': valid_ds
+    })
+
+    return full_ds

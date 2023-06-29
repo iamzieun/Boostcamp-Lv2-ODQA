@@ -55,7 +55,7 @@ def main():
 
     origin_datasets = load_from_disk(data_args.dataset_name)
 
-    # 데이터 증강
+    # 데이터 증강 / retrieved context 사용
     if data_args.augment_data == "squad_kor_v1":
         datasets = add_data(origin_dataset = origin_datasets,
                             new_dataset_name = data_args.augment_data,
@@ -65,6 +65,8 @@ def main():
                             drop_context_duplicate = data_args.drop_context_duplicate 
                                                     if data_args.drop_context_duplicate is not None 
                                                     else True)
+    elif data_args.retrieved_context:
+        datasets = make_retrieved_context()
     else:
         datasets = origin_datasets
 
