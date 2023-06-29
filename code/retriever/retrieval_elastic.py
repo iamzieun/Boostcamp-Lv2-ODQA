@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import pandas as pd
 from tqdm.auto import tqdm
@@ -11,10 +12,19 @@ def corpus_loader(dataset_path):
         wiki = json.load(f)
 
     wiki_texts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
-    wiki_texts = [text for text in wiki_texts]
+    wiki_texts = [preprocess(text) for text in wiki_texts]
     wiki_corpus = [{"document_text": wiki_texts[i]} for i in range(len(wiki_texts))]
     return wiki_corpus
 
+# 삽입할 데이터 전처리
+def preprocess(text):
+    text = re.sub(r"\n", " ", text)
+    text = re.sub(r"\\n", " ", text)
+    text = re.sub(r"#", " ", text)
+    text = re.sub(r"[^A-Za-z0-9가-힣.?!,()~‘’“”"":%&《》〈〉''㈜·\-\'+\s一-]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    
+    return text
 
 def es_search(es, index_name, question, topk):
     query = {"query": 
@@ -49,7 +59,7 @@ class ElasticRetrieval:
         # ElasticSearch params
         self.data_path = "./data" if data_path is None else data_path
         self.context_path = "wikipedia_documents.json" if context_path is None else context_path
-        self.setting_path = "./retriever/setting.json" if setting_path is None else setting_path
+        self.setting_path = "./retriever/elastic_setting.json" if setting_path is None else setting_path
         self.index_name = index_name
 
         if self.es.indices.exists(index=index_name):

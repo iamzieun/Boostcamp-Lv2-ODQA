@@ -38,6 +38,7 @@ def main():
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
+    print(training_args)
 
     # logging 설정
     logging.basicConfig(
