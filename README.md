@@ -55,8 +55,8 @@ level2_nlp_mrc-nlp-12/
 │   ├── load_data.py                            # 데이터셋을 정의하고 DatasetDict를 반환하는 스크립트
 │   ├── run.sh                                  # train.py를 실행하기 위한 스크립트
 │   ├── run_mrc.py
-│   ├── train.py								# MRC, Retrieval 모델 학습 및 평가
-│   └── README.md								# ODQA 모델 평가 또는 제출 파일 (predictions.json) 생성
+│   ├── train.py				# MRC, Retrieval 모델 학습 및 평가
+│   └── README.md				# ODQA 모델 평가 또는 제출 파일 (predictions.json) 생성
 │
 ├── data/
 │   ├── retrieved_context_dataset/              # retrieval에 사용되는 corpus
