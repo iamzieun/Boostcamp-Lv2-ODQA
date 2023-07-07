@@ -38,6 +38,10 @@ class DataTrainingArguments:
         default="../data/train_dataset",
         metadata={"help": "The name of the dataset to use."},
     )
+    valid_dataset_name: Optional[str] = field(
+        default="../data/train_dataset",
+        metadata={"help": "The name of the validation dataset to use."},
+    )
     overwrite_cache: bool = field(
         default=False,
         metadata={"help": "Overwrite the cached training and evaluation sets"},
@@ -87,9 +91,40 @@ class DataTrainingArguments:
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
     )
-    use_faiss: bool = field(
-        default=False, metadata={"help": "Whether to build with faiss"}
+    retrieval_method: str = field(
+        default="bm25", metadata={"help": "Choose retriever for passage retrieval"}
     )
+    augment_data: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "New dataset name (ex. squad_kor_v1)"
+        },
+    )
+    augment_valid_data: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Whether augment validation set or not"
+        },
+    )
+    drop_context_duplicate: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Whether use unique context or not"
+        },
+    )
+    retrieved_context: Optional[bool] = field(
+        default=None,
+        metadata={
+            "help": "Whether load retrieved context or not"
+        },
+    )
+    sort_data: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "Whether sort train dataset or not"
+        },
+    )
+
 
 @dataclass
 class WandbArguments:
